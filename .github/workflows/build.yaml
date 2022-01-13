@@ -1,0 +1,60 @@
+name: Build
+on:
+  - push
+  - release
+  - pull_request
+  - workflow_dispatch
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch:
+          - amd64
+    steps:
+      - uses: actions/checkout@v2
+      - name: setup MS dev commands
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+      - name: Setup Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: '3.x'
+      - name: install meson and ninja
+        run: pip install meson ninja
+
+      - name: Cache fftw3
+        id: cache-fftw3
+        uses: actions/cache@v2
+        with:
+          path: ${{ github.workspace }}/vcpkg/installed/
+          key: ${{ runner.os }}-fftw3-v1
+      - name: Run vcpkg
+        uses: lukka/run-vcpkg@v4
+        if: steps.cache-fftw3.outputs.cache-hit != 'true'
+        with:
+          vcpkgArguments: 'fftw3[avx2]:x64-windows-static'
+          vcpkgDirectory: '${{ github.workspace }}/vcpkg'
+          vcpkgGitCommitId: 5568f110b509a9fd90711978a7cb76bae75bb092 # 2021.05.12 release
+      - name: Install pkg-config lite
+        run: choco install pkgconfiglite
+
+      - name: download VS headers and patch header location
+        shell: bash
+        run: |
+          git clone https://github.com/AmusementClub/vapoursynth-classic --depth=1 --branch R54 vapoursynth
+          mkdir include/vapoursynth
+          cp vapoursynth/include/*.h include/vapoursynth/
+          sed -i -e '/#include <vapoursynth/y|<>|""|' include/Helper.h
+      - name: Meson setup
+        run: meson setup builddir/ -Db_vscrt=mt -Dpkg_config_path=${{ github.workspace }}/vcpkg/installed/x64-windows-static/lib/pkgconfig
+      - name: Meson compile
+        run: meson compile -C builddir/ -v
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: release-${{matrix.arch}}
+          path: |
+            builddir/bm3d.dll

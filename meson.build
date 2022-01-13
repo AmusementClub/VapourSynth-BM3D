@@ -1,10 +1,16 @@
 project('BM3D', 'cpp',
   default_options : ['buildtype=release', 'b_ndebug=if-release', 'cpp_std=c++14'],
-  meson_version : '>=0.48.0',
+  meson_version : '>=0.49.0',
   version : '8'
 )
 
-add_project_arguments('-Wno-unused-local-typedefs', language : 'cpp')
+cxx = meson.get_compiler('cpp')
+
+gcc_syntax = cxx.get_argument_syntax() == 'gcc'
+
+if gcc_syntax
+  add_project_arguments('-Wno-unused-local-typedefs', language : 'cpp')
+endif
 
 sources = [
   'include/Block.h',
@@ -34,18 +40,24 @@ sources = [
   'source/VSPlugin.cpp'
 ]
 
-vapoursynth_dep = dependency('vapoursynth').partial_dependency(compile_args : true, includes : true)
+if gcc_syntax
+  vapoursynth_dep = dependency('vapoursynth').partial_dependency(compile_args : true, includes : true)
+  install_dir = join_paths(vapoursynth_dep.get_pkgconfig_variable('libdir'), 'vapoursynth')
+  fftw3f_dep = dependency('fftw3f')
 
-fftw3f_dep = dependency('fftw3f')
-
-if host_machine.cpu_family().startswith('x86')
-  add_project_arguments('-mfpmath=sse', '-msse2', language : 'cpp')
+  if host_machine.cpu_family().startswith('x86')
+    add_project_arguments('-mfpmath=sse', '-msse2', language : 'cpp')
+  endif
+else
+  vapoursynth_dep = []
+  fftw3f_dep = dependency('fftwf')
+  install_dir = get_option('libdir') / 'vapoursynth'
 endif
 
 shared_module('bm3d', sources,
   dependencies : [vapoursynth_dep, fftw3f_dep],
   include_directories : include_directories('include'),
   install : true,
-  install_dir : join_paths(vapoursynth_dep.get_pkgconfig_variable('libdir'), 'vapoursynth'),
+  install_dir : install_dir,
   gnu_symbol_visibility : 'hidden'
 )
